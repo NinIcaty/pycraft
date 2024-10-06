@@ -85,10 +85,10 @@ for i in range(20):
         elif boxType == "stone.png":
             stoneBoxes.append(box)
 
-# Death height, set a threshold below which the player "dies"
+# Death height player dies at y -6
 death_height = -6
 
-# Pause menu (hidden initially)
+# Pause menu ,hide menu panel
 menu_panel = None
 
 def toggle_menu():
@@ -117,8 +117,8 @@ def update():
     # Check if the player has fallen off the platform (below death_height)
     if player.y < death_height:
         print("Player has fallen! Respawning...")
-        player.position = (10, 1, 10)  # Respawn player at the center
-        player.rotation = (0, 0, 0)  # Reset rotation (optional)
+        player.position = (10, 1, 10)  # Respawn player
+        player.rotation = (0, 0, 0)  
 
 def input(key):
     global placeBlock
@@ -128,9 +128,9 @@ def input(key):
     global inventory
     
     if key == 'escape':
-        toggle_menu()  # Show or hide the menu when 'Esc' is pressed
+        toggle_menu()  # Show or hide the menu when Esc is presed
 
-    # Place a block when left mouse is clicked
+    # Place  block command
     if key == 'left mouse down' and not menu_panel.enabled:  # Prevent placing blocks when the menu is open
         if mouse.hovered_entity:  # Check if the mouse is over an entity (a box)
             hovered_box = mouse.hovered_entity
@@ -163,7 +163,7 @@ def input(key):
             else:
                 print("No stone")     
                 
-    # Remove a block when right mouse is clicked
+    # Remove  block 
     if key == 'right mouse down' and not menu_panel.enabled:  # Prevent removing blocks when the menu is open
         if mouse.hovered_entity:  # Check if the mouse is over an entity (a box)
             hovered_box = mouse.hovered_entity
