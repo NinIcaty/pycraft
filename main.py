@@ -1,217 +1,209 @@
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
-import random
+from noise import pnoise2
 
 app = Ursina()
-
 window.fullscreen = True
 
+# ================== MODE ==================
+INFINITE_BLOCKS = False   # True = Creative | False = Survival
+
+# ================== SKY ==================
+Sky(texture='sky_default')
+
+sun = DirectionalLight()
+sun.look_at(Vec3(1,-1,-1))
+
+AmbientLight(color=color.rgba(200,200,200,0.4))
+
+# ================== PLAYER ==================
 player = FirstPersonController()
-player.mouse_sensitivity = Vec2(12, 12)  # Sensitivity
-player.position = (10, 0, 10)
-player.height = 2
-player.jump_height = 1.5
-placeBlock = 'dirt.png'
 player.height = 2
 player.jump_height = 1.5
 
-Sky()
+death_height = -20
 
-# Creating the platform
+# ================== BLOCK DATA ==================
+BLOCK_TYPES = {
+    "grass": "grass.png",
+    "dirt": "dirt.png",
+    "stone": "stone.png"
+}
+
+inventory = {
+    "grass": 0,
+    "dirt": 0,
+    "stone": 0
+}
+
 boxes = []
-dirtBoxes = []
-grassBoxes = []
-stoneBoxes = []
-inventory = {"grass": 0, "dirt": 0, "stone": 0}
+selected_slot = 0
 
-# Create the terrain
-for i in range(30):
-    for j in range(30):
+# ================== WORLD GEN ==================
+WORLD_SIZE = 40
+height_map = {}
 
-        boxType = random.randint(1, 10)
-        if boxType == 1 or boxType == 2:
-            boxType = "dirt.png"
-        elif boxType == 3 or boxType == 4 or boxType == 5 or boxType == 6 or boxType == 7 or boxType == 8 or boxType == 9 or boxType == 10 :
-            boxType = "grass.png"
-        elif boxType == 6:
-            boxType = "stone.png"
+def get_height(x, z):
+    return int(pnoise2(x/25, z/25) * 5 + 10)
 
-        box = Button(color=color.white, model='cube', position=(j, 0, i),
-                     texture=boxType, parent=scene, origin_y=0.5)
-        boxes.append(box)
+def create_block(pos, texture):
+    box = Entity(
+        model='cube',
+        position=pos,
+        texture=texture,
+        collider='box'
+    )
+    boxes.append(box)
+    return box
 
-        if boxType == "dirt.png":
-            dirtBoxes.append(box)
-        elif boxType == "grass.png":
-            grassBoxes.append(box)
-        elif boxType == "stone.png":
-            stoneBoxes.append(box)
-        # layer 2
-        boxType = random.randint(1, 6)
-        if boxType == 1 or boxType == 2 or boxType == 3 or boxType == 4:
-            boxType = "dirt.png"
-        elif boxType == 5:
-            boxType = "grass.png"
-        elif boxType == 6:
-            boxType = "stone.png"
+for x in range(WORLD_SIZE):
+    for z in range(WORLD_SIZE):
 
-        box = Button(color=color.white, model='cube', position=(j, -1, i),
-                     texture=boxType, parent=scene, origin_y=0.5)
-        boxes.append(box)
+        height = get_height(x,z)
+        height_map[(x,z)] = height
 
-        if boxType == "dirt.png":
-            dirtBoxes.append(box)
-        elif boxType == "grass.png":
-            grassBoxes.append(box)
-        elif boxType == "stone.png":
-            stoneBoxes.append(box)
-        # layer 3
-        boxType = random.randint(1, 9)
-        if boxType == 1 or boxType == 2:
-            boxType = "dirt.png"
-        elif boxType == 3:
-            boxType = "grass.png"
-        elif boxType == 6 or boxType == 5 or boxType == 4 or boxType == 7 or boxType == 8 or boxType == 9:
-            boxType = "stone.png"
+        create_block((x,height,z), BLOCK_TYPES["grass"])
 
-        box = Button(color=color.white, model='cube', position=(j, -2, i),
-                     texture=boxType, parent=scene, origin_y=0.5)
-        boxes.append(box)
+        for i in range(1,3):
+            create_block((x,height-i,z), BLOCK_TYPES["dirt"])
 
-        if boxType == "dirt.png":
-            dirtBoxes.append(box)
-        elif boxType == "grass.png":
-            grassBoxes.append(box)
-        elif boxType == "stone.png":
-            stoneBoxes.append(box)
+        create_block((x,height-3,z), BLOCK_TYPES["stone"])
 
-death_height = -6
+def get_spawn():
+    h = height_map[(10,10)]
+    return Vec3(10, h+2, 10)
 
-menu_panel = None
+player.position = get_spawn()
+
+# ================== HOTBAR ==================
+hotbar = Entity(parent=camera.ui, model='quad', scale=(0.6,0.1), position=(0,-0.45), color=color.dark_gray)
+
+slots = []
+slot_icons = []
+slot_text = []
+
+for i, block in enumerate(BLOCK_TYPES):
+
+    slot = Entity(
+        parent=hotbar,
+        model='quad',
+        scale=(0.18,0.8),
+        position=(-0.25 + i*0.25, 0),
+        color=color.gray
+    )
+
+    icon = Entity(
+        parent=slot,
+        model='quad',
+        texture=BLOCK_TYPES[block],
+        scale=(0.6,0.6)
+    )
+
+    count = Text(
+        parent=slot,
+        text="0",
+        scale=2,
+        position=(0.25,-0.35)
+    )
+
+    slots.append(slot)
+    slot_icons.append(icon)
+    slot_text.append(count)
+
+def update_hotbar():
+    keys = list(BLOCK_TYPES.keys())
+
+    for i, key in enumerate(keys):
+
+        if INFINITE_BLOCKS:
+            slot_text[i].text = "∞"
+        else:
+            slot_text[i].text = str(inventory[key])
+
+        slots[i].color = color.white if i == selected_slot else color.gray
+
+update_hotbar()
+
+# ================== MENU ==================
+menu_panel = Entity(parent=camera.ui, enabled=False)
+Panel(parent=menu_panel, scale=(0.4,0.4), color=color.dark_gray)
+
+resume_button = Button(text="Resume", parent=menu_panel, position=(0,0.1))
+quit_button = Button(text="Quit", parent=menu_panel, position=(0,-0.1), color=color.red)
 
 def toggle_menu():
-    global menu_panel
-    if menu_panel.enabled:
-        menu_panel.disable()
-        mouse.locked = True
-    else:
-        menu_panel.enable()
-        mouse.locked = False
+    menu_panel.enabled = not menu_panel.enabled
+    mouse.locked = not menu_panel.enabled
 
-def create_menu():
-    global menu_panel
-    menu_panel = Entity(parent=camera.ui, enabled=False)
-    menu_bg = Panel(parent=menu_panel, scale=(0.5, 0.5), color=color.dark_gray)
+resume_button.on_click = toggle_menu
+quit_button.on_click = application.quit
 
-    # Quit button
-    quit_button = Button(text="Quit", parent=menu_panel, position=(0, -0.1), scale=(0.2, 0.1), color=color.red)
-    quit_button.on_click = application.quit
-
-    # Resume button
-    resume_button = Button(text="Resume", parent=menu_panel, position=(0, 0.1), scale=(0.2, 0.1))
-    resume_button.on_click = toggle_menu
-
+# ================== UPDATE ==================
 def update():
+
     if player.y < death_height:
-        print("Player has fallen! Respawning...")
-        player.position = (10, 1, 10)  # Respawn player
-        player.rotation = (0, 0, 0)
+        player.position = get_spawn()
 
-    # Sprinting
-    if held_keys['control']:
-        player.speed = 7.5 # Sprint speed
-    else:
-        player.speed = 5  # Normal speed
+    player.speed = 7 if held_keys['control'] else 5
 
+    update_hotbar()
+
+# ================== INPUT ==================
 def input(key):
-    global placeBlock
-    global dirtBoxes
-    global grassBoxes
-    global stoneBoxes
-    global inventory
 
-    def distance_3d(a, b):
-        return ((a[0] - b[0])**2 + (a[1] - b[1])**2 + (a[2] - b[2])**2) ** 0.5
+    global selected_slot
+
+    def dist(a,b):
+        return ((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2)**0.5
 
     if key == 'escape':
         toggle_menu()
 
-    # Place block
-    if key == 'left mouse down' and not menu_panel.enabled:
-        if mouse.hovered_entity:
-            hovered_box = mouse.hovered_entity
-            new_box_position = hovered_box.position + mouse.normal
+    if menu_panel.enabled:
+        return
 
-            # Distance check
-            if distance_3d(player.position, new_box_position) > 5:
-                print("Too far to place block.")
-                return
+    keys = list(BLOCK_TYPES.keys())
+    block_name = keys[selected_slot]
 
-            if placeBlock == 'dirt.png' and inventory["dirt"] > 0:  # Place dirt
-                new_box = Button(color=color.white, model='cube', position=new_box_position,
-                                 texture=placeBlock, parent=scene, origin_y=0.5)
-                boxes.append(new_box)
-                dirtBoxes.append(new_box)
-                inventory["dirt"] -= 1
-            elif placeBlock == 'dirt.png':
-                print("No dirt")
+    # PLACE
+    if key == 'left mouse down' and mouse.hovered_entity:
 
-            if placeBlock == 'grass.png' and inventory["grass"] > 0:  # Place grass
-                new_box = Button(color=color.white, model='cube', position=new_box_position,
-                                 texture=placeBlock, parent=scene, origin_y=0.5)
-                boxes.append(new_box)
-                grassBoxes.append(new_box)
-                inventory["grass"] -= 1
-            elif placeBlock == 'grass.png':
-                print("No grass")
+        pos = mouse.hovered_entity.position + mouse.normal
 
-            if placeBlock == 'stone.png' and inventory["stone"] > 0:  # Place stone
-                new_box = Button(color=color.white, model='cube', position=new_box_position,
-                                 texture=placeBlock, parent=scene, origin_y=0.5)
-                boxes.append(new_box)
-                stoneBoxes.append(new_box)
-                inventory["stone"] -= 1
-            elif placeBlock == 'stone.png':
-                print("No stone")
-#Break block
-    if key == 'right mouse down' and not menu_panel.enabled:
-        if mouse.hovered_entity:
-            hovered_box = mouse.hovered_entity
+        if dist(player.position,pos) > 5:
+            return
 
-            # Distance check
-            if distance_3d(player.position, hovered_box.position) > 5:
-                print("Too far to remove block.")
-                return
+        if INFINITE_BLOCKS or inventory[block_name] > 0:
 
-            if hovered_box in boxes:
-                boxes.remove(hovered_box)
-                destroy(hovered_box)
+            create_block(pos, BLOCK_TYPES[block_name])
 
-                if hovered_box in dirtBoxes:
-                    dirtBoxes.remove(hovered_box)
-                    inventory["dirt"] += 1
-                    print("Got dirt", inventory["dirt"])
-                if hovered_box in grassBoxes:
-                    grassBoxes.remove(hovered_box)
-                    inventory["grass"] += 1
-                    print("Got grass", inventory["grass"])
-                if hovered_box in stoneBoxes:
-                    stoneBoxes.remove(hovered_box)
-                    inventory["stone"] += 1
-                    print("Got stone", inventory["stone"])
+            if not INFINITE_BLOCKS:
+                inventory[block_name] -= 1
 
-    # Set placeBlock
-    if key == '1':
-        placeBlock = 'dirt.png'
-        print("placeBlock is dirt")
-    if key == '2':
-        placeBlock = 'grass.png'
-        print("placeBlock is grass")
-    if key == '3':
-        placeBlock = 'stone.png'
-        print("placeBlock is stone")
+    # BREAK
+    if key == 'right mouse down' and mouse.hovered_entity:
 
+        box = mouse.hovered_entity
 
-create_menu()
+        if dist(player.position, box.position) > 5:
+            return
+
+        tex = str(box.texture)
+
+        if not INFINITE_BLOCKS:
+            if "grass" in tex:
+                inventory["grass"] += 1
+            elif "dirt" in tex:
+                inventory["dirt"] += 1
+            elif "stone" in tex:
+                inventory["stone"] += 1
+
+        boxes.remove(box)
+        destroy(box)
+
+    # HOTBAR SELECT
+    if key == '1': selected_slot = 0
+    if key == '2': selected_slot = 1
+    if key == '3': selected_slot = 2
 
 app.run()
